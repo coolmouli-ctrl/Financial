@@ -46,16 +46,6 @@ with st.sidebar:
     st.subheader("Personal Details")
     current_age = st.number_input("Current Age", min_value=18, max_value=100, value=35)
     
-    gender = st.radio("Gender", ("Male", "Female"))
-    
-    # Set inflation based on gender
-    if gender == "Male":
-        inflation_rate = 2.0
-        st.info("✓ Inflation rate set to 2%")
-    else:
-        inflation_rate = 4.0
-        st.info("✓ Inflation rate set to 4%")
-    
     retirement_age = st.number_input("Desired Retirement Age", min_value=current_age+1, max_value=100, value=65)
     life_expectancy = st.number_input("Expected Life Expectancy", min_value=retirement_age+1, max_value=120, value=85)
     
@@ -68,6 +58,10 @@ with st.sidebar:
     # Retirement Expenses
     st.subheader("Retirement Expenses")
     annual_retirement_expense = st.number_input("Annual Retirement Expenses ($)", min_value=0, value=50000, step=1000)
+    
+    # Inflation Rate
+    st.subheader("Inflation")
+    inflation_rate = st.slider("Expected Inflation Rate (%)", min_value=0.0, max_value=10.0, value=2.5, step=0.1)
 
 # Calculate retirement metrics
 years_to_retirement = retirement_age - current_age
