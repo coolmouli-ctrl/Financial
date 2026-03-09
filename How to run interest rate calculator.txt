@@ -1,0 +1,23 @@
+HOW TO RUN THE INTEREST RATE CALCULATOR
+=========================================
+
+1. Install required packages:
+   pip install -r requirements.txt
+
+2. Run the application:
+   streamlit run interest_rate_calculator.py
+
+3. The app will open in your browser at http://localhost:8501
+
+4. Upload your Excel file with Principal and Interest columns
+
+5. Select the appropriate columns and calculation type
+
+6. Click "Calculate Average Interest Rate" to see results
+
+EXCEL FILE FORMAT:
+- Should have at least two columns (Principal and Interest)
+- Column names can be anything (you'll select them in the app)
+- Interest can be either:
+  * Interest Amount (e.g., 500 for $500 interest on $10,000 principal)
+  * Interest Rate (e.g., 5.0 for 5% interest rate)

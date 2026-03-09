@@ -1,0 +1,94 @@
+.file-upload-container {
+  background: white;
+  border-radius: 12px;
+  padding: 2rem;
+  box-shadow: 0 4px 16px rgba(0, 0, 0, 0.1);
+}
+
+.file-upload-zone {
+  border: 3px dashed #ccc;
+  border-radius: 12px;
+  padding: 3rem 2rem;
+  text-align: center;
+  transition: all 0.3s ease;
+  background: #fafafa;
+}
+
+.file-upload-zone:hover {
+  border-color: #667eea;
+  background: #f5f7ff;
+}
+
+.upload-icon {
+  font-size: 4rem;
+  margin-bottom: 1rem;
+}
+
+.file-upload-zone h2 {
+  color: #333;
+  margin-bottom: 0.5rem;
+}
+
+.file-upload-zone p {
+  color: #666;
+  margin-bottom: 1.5rem;
+}
+
+.file-upload-zone .btn-primary {
+  margin-bottom: 1rem;
+}
+
+.file-info {
+  margin-top: 1rem;
+  padding-top: 1rem;
+  border-top: 1px solid #eee;
+}
+
+.file-info p {
+  color: #999;
+  font-size: 0.9rem;
+  margin: 0.25rem 0;
+}
+
+.example-format {
+  margin-top: 2rem;
+  padding-top: 2rem;
+  border-top: 2px solid #eee;
+}
+
+.example-format h3 {
+  color: #333;
+  margin-bottom: 1rem;
+}
+
+.example-format table {
+  width: 100%;
+  max-width: 400px;
+  margin: 1rem auto;
+  border-collapse: collapse;
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.1);
+}
+
+.example-format table th,
+.example-format table td {
+  padding: 0.75rem;
+  text-align: left;
+  border: 1px solid #ddd;
+}
+
+.example-format table th {
+  background: #667eea;
+  color: white;
+  font-weight: 600;
+}
+
+.example-format table td {
+  background: white;
+}
+
+.example-format .note {
+  color: #666;
+  font-size: 0.9rem;
+  margin-top: 1rem;
+  line-height: 1.6;
+}

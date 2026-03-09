@@ -1,0 +1,9 @@
+INside git clone and financial folder
+
+set OPENAI_API_KEY=your_api_key_here
+
+python -m streamlit run retirement_calculator_streamlit.py
+
+https://github.com/settings/copilot
+
+https://financial-e8px.onrender.com/

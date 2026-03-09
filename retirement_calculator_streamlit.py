@@ -1,6 +1,173 @@
 import streamlit as st
 import pandas as pd
 import matplotlib.pyplot as plt
+import os
+import json
+
+try:
+    from openai import OpenAI
+except ImportError:
+    OpenAI = None
+
+
+def get_default_openai_key() -> str:
+    if "OPENAI_API_KEY" in st.secrets:
+        return st.secrets["OPENAI_API_KEY"]
+    return os.getenv("OPENAI_API_KEY", "")
+
+
+def clean_json_response(raw_text: str) -> str:
+    text = raw_text.strip()
+    if text.startswith("```"):
+        parts = text.split("```")
+        for part in parts:
+            candidate = part.strip()
+            if candidate.startswith("json"):
+                candidate = candidate[4:].strip()
+            if candidate.startswith("{") and candidate.endswith("}"):
+                return candidate
+    return text
+
+
+def simulate_retirement(profile: dict, return_rate_pct: float, inflation_pct: float, expense_multiplier: float = 1.0) -> dict:
+    years_to_retirement = profile["retirement_age"] - profile["current_age"]
+    years_in_retirement = profile["life_expectancy"] - profile["retirement_age"]
+
+    savings_at_retirement = profile["current_savings"]
+    rate = return_rate_pct / 100
+
+    for _ in range(years_to_retirement):
+        savings_at_retirement = savings_at_retirement * (1 + rate) + profile["annual_contribution"]
+
+    savings_during_retirement = savings_at_retirement
+    current_expense = profile["annual_retirement_expense"] * expense_multiplier
+    inflation = inflation_pct / 100
+    depletion_age = None
+
+    for year in range(years_in_retirement):
+        savings_during_retirement = savings_during_retirement * (1 + rate) - current_expense
+        current_expense = current_expense * (1 + inflation)
+        if savings_during_retirement < 0:
+            depletion_age = profile["retirement_age"] + year + 1
+            break
+
+    return {
+        "savings_at_retirement": savings_at_retirement,
+        "ending_balance": savings_during_retirement,
+        "is_sufficient": savings_during_retirement >= 0,
+        "depletion_age": depletion_age,
+    }
+
+
+def get_chatbot_reply(user_question: str, profile: dict, model_name: str, api_key: str) -> str:
+    if OpenAI is None:
+        return "The OpenAI package is not installed. Run `pip install openai` and restart the app."
+    if not api_key:
+        return "Add your OpenAI API key in sidebar AI settings (or set OPENAI_API_KEY) to use the chatbot."
+
+    client = OpenAI(api_key=api_key)
+
+    system_prompt = (
+        "You are a retirement planning assistant in a Streamlit app. "
+        "Give clear, practical, and concise explanations for non-experts. "
+        "Do not claim certainty. Mention trade-offs and suggest next actions. "
+        "This is educational content, not financial advice."
+    )
+
+    context = (
+        "User profile and projection context:\n"
+        f"- Current age: {profile['current_age']}\n"
+        f"- Retirement age: {profile['retirement_age']}\n"
+        f"- Life expectancy: {profile['life_expectancy']}\n"
+        f"- Current savings: ${profile['current_savings']:,.2f}\n"
+        f"- Annual contribution: ${profile['annual_contribution']:,.2f}\n"
+        f"- Expected annual return: {profile['annual_return']}%\n"
+        f"- Annual retirement expense: ${profile['annual_retirement_expense']:,.2f}\n"
+        f"- Inflation: {profile['inflation_rate']}%\n"
+        f"- Savings at retirement: ${profile['savings_at_retirement']:,.2f}\n"
+        f"- Ending balance by life expectancy: ${profile['ending_balance']:,.2f}"
+    )
+
+    completion = client.chat.completions.create(
+        model=model_name,
+        temperature=0.4,
+        messages=[
+            {"role": "system", "content": system_prompt},
+            {"role": "system", "content": context},
+            {"role": "user", "content": user_question},
+        ],
+    )
+    return completion.choices[0].message.content
+
+
+def generate_ai_scenarios(profile: dict, model_name: str, api_key: str) -> dict:
+    if OpenAI is None:
+        return {"error": "The OpenAI package is not installed. Run `pip install openai` and restart the app."}
+    if not api_key:
+        return {"error": "Add your OpenAI API key in sidebar AI settings (or set OPENAI_API_KEY)."}
+
+    client = OpenAI(api_key=api_key)
+
+    prompt = f"""
+Create exactly three retirement planning scenarios for this user:
+- current_age: {profile['current_age']}
+- retirement_age: {profile['retirement_age']}
+- life_expectancy: {profile['life_expectancy']}
+- current_savings: {profile['current_savings']}
+- annual_contribution: {profile['annual_contribution']}
+- annual_return: {profile['annual_return']}
+- annual_retirement_expense: {profile['annual_retirement_expense']}
+- inflation_rate: {profile['inflation_rate']}
+
+Return valid JSON only with this exact schema:
+{{
+  "scenarios": [
+    {{
+      "name": "Optimistic",
+      "annual_return_pct": number,
+      "inflation_pct": number,
+      "annual_expense_change_pct": number,
+      "analysis": "short explanation"
+    }},
+    {{
+      "name": "Realistic",
+      "annual_return_pct": number,
+      "inflation_pct": number,
+      "annual_expense_change_pct": number,
+      "analysis": "short explanation"
+    }},
+    {{
+      "name": "Conservative",
+      "annual_return_pct": number,
+      "inflation_pct": number,
+      "annual_expense_change_pct": number,
+      "analysis": "short explanation"
+    }}
+  ]
+}}
+
+Rules:
+- Keep values realistic and diverse.
+- annual_expense_change_pct means % change to the base annual retirement expense.
+- Keep analysis under 35 words per scenario.
+"""
+
+    completion = client.chat.completions.create(
+        model=model_name,
+        temperature=0.5,
+        messages=[
+            {
+                "role": "system",
+                "content": "You generate structured retirement scenarios. Return strict JSON only.",
+            },
+            {"role": "user", "content": prompt},
+        ],
+    )
+
+    raw = completion.choices[0].message.content
+    cleaned = clean_json_response(raw)
+    parsed = json.loads(cleaned)
+    return parsed
 
 # Set page configuration
 st.set_page_config(
@@ -63,6 +230,16 @@ with st.sidebar:
     st.subheader("Inflation")
     inflation_rate = st.slider("Expected Inflation Rate (%)", min_value=0.0, max_value=10.0, value=2.5, step=0.1)
 
+    st.subheader("🤖 AI Settings")
+    model_name = st.text_input("OpenAI Model", value="gpt-4o-mini")
+    api_key_input = st.text_input(
+        "OpenAI API Key",
+        value=st.session_state.get("openai_api_key", get_default_openai_key()),
+        type="password",
+        help="Stored only for this app session.",
+    )
+    st.session_state["openai_api_key"] = api_key_input.strip()
+
 # Calculate retirement metrics
 years_to_retirement = retirement_age - current_age
 years_in_retirement = life_expectancy - retirement_age
@@ -89,6 +266,19 @@ for year in range(years_in_retirement):
 
 # Determine status
 is_sufficient = savings_during_retirement >= 0
+
+profile = {
+    "current_age": current_age,
+    "retirement_age": retirement_age,
+    "life_expectancy": life_expectancy,
+    "current_savings": float(current_savings),
+    "annual_contribution": float(annual_contribution),
+    "annual_return": float(annual_return),
+    "annual_retirement_expense": float(annual_retirement_expense),
+    "inflation_rate": float(inflation_rate),
+    "savings_at_retirement": float(savings_at_retirement),
+    "ending_balance": float(savings_during_retirement),
+}
 
 # Main content area with columns
 col1, col2, col3 = st.columns(3)
@@ -228,6 +418,137 @@ ax.grid(True, alpha=0.3)
 ax.yaxis.set_major_formatter(plt.FuncFormatter(lambda x, p: f'${x/1e6:.1f}M' if x >= 1e6 else f'${x/1e3:.0f}K'))
 
 st.pyplot(fig)
+
+st.divider()
+st.subheader("🤖 AI Assistant")
+
+if "scenario_df" not in st.session_state:
+    st.session_state["scenario_df"] = None
+
+ai_tab1, ai_tab2 = st.tabs(["Retirement Chatbot", "Scenario Generator"])
+
+with ai_tab1:
+    st.caption("Ask questions about your plan, trade-offs, and practical next steps.")
+
+    if "chat_messages" not in st.session_state:
+        st.session_state.chat_messages = [
+            {
+                "role": "assistant",
+                "content": "Ask me anything about your retirement plan. I can explain gaps and suggest adjustments.",
+            }
+        ]
+
+    if st.button("Clear Chat", key="clear_chat_btn"):
+        st.session_state.chat_messages = [
+            {
+                "role": "assistant",
+                "content": "Ask me anything about your retirement plan. I can explain gaps and suggest adjustments.",
+            }
+        ]
+        st.rerun()
+
+    for msg in st.session_state.chat_messages:
+        with st.chat_message(msg["role"]):
+            st.write(msg["content"])
+
+    user_prompt = st.chat_input("Example: How can I retire 3 years earlier?")
+    if user_prompt:
+        st.session_state.chat_messages.append({"role": "user", "content": user_prompt})
+        with st.chat_message("user"):
+            st.write(user_prompt)
+
+        with st.chat_message("assistant"):
+            with st.spinner("Thinking..."):
+                try:
+                    reply = get_chatbot_reply(
+                        user_question=user_prompt,
+                        profile=profile,
+                        model_name=model_name,
+                        api_key=st.session_state.get("openai_api_key", ""),
+                    )
+                except Exception as ex:
+                    reply = f"I hit an error while generating the response: {ex}"
+                st.write(reply)
+
+        st.session_state.chat_messages.append({"role": "assistant", "content": reply})
+
+with ai_tab2:
+    st.caption("Generate AI-based optimistic, realistic, and conservative scenarios from your inputs.")
+
+    scenario_btn_col1, scenario_btn_col2 = st.columns(2)
+    with scenario_btn_col1:
+        generate_clicked = st.button("Generate AI Scenarios", use_container_width=True)
+    with scenario_btn_col2:
+        clear_clicked = st.button("Clear Scenarios", use_container_width=True, key="clear_scenarios_btn")
+
+    if clear_clicked:
+        st.session_state["scenario_df"] = None
+        st.rerun()
+
+    if generate_clicked:
+        with st.spinner("Generating scenarios..."):
+            try:
+                scenario_payload = generate_ai_scenarios(
+                    profile=profile,
+                    model_name=model_name,
+                    api_key=st.session_state.get("openai_api_key", ""),
+                )
+
+                if "error" in scenario_payload:
+                    st.error(scenario_payload["error"])
+                else:
+                    scenario_rows = []
+                    for scenario in scenario_payload.get("scenarios", []):
+                        expense_multiplier = 1 + (float(scenario["annual_expense_change_pct"]) / 100)
+                        result = simulate_retirement(
+                            profile,
+                            return_rate_pct=float(scenario["annual_return_pct"]),
+                            inflation_pct=float(scenario["inflation_pct"]),
+                            expense_multiplier=expense_multiplier,
+                        )
+
+                        scenario_rows.append(
+                            {
+                                "Scenario": scenario["name"],
+                                "Return %": float(scenario["annual_return_pct"]),
+                                "Inflation %": float(scenario["inflation_pct"]),
+                                "Expense Change %": float(scenario["annual_expense_change_pct"]),
+                                "Savings at Retirement": result["savings_at_retirement"],
+                                "End Balance": result["ending_balance"],
+                                "Status": "✓ Sufficient" if result["is_sufficient"] else "⚠️ Shortfall",
+                                "Depletion Age": result["depletion_age"] if result["depletion_age"] else "N/A",
+                                "AI Analysis": scenario["analysis"],
+                            }
+                        )
+
+                    scenario_df = pd.DataFrame(scenario_rows)
+                    st.session_state["scenario_df"] = scenario_df
+
+                    display_df = scenario_df.copy()
+                    display_df["Savings at Retirement"] = display_df["Savings at Retirement"].map(lambda x: f"${x:,.2f}")
+                    display_df["End Balance"] = display_df["End Balance"].map(lambda x: f"${x:,.2f}")
+
+                    st.dataframe(display_df, use_container_width=True, hide_index=True)
+                    st.info("Use these scenarios to stress-test your plan and compare what changes are most impactful.")
+            except Exception as ex:
+                st.error(f"Unable to generate scenarios: {ex}")
+
+    if st.session_state.get("scenario_df") is not None and not st.session_state["scenario_df"].empty:
+        existing_df = st.session_state["scenario_df"]
+        display_df = existing_df.copy()
+        display_df["Savings at Retirement"] = display_df["Savings at Retirement"].map(lambda x: f"${x:,.2f}")
+        display_df["End Balance"] = display_df["End Balance"].map(lambda x: f"${x:,.2f}")
+        st.dataframe(display_df, use_container_width=True, hide_index=True)
+
+        csv_bytes = existing_df.to_csv(index=False).encode("utf-8")
+        st.download_button(
+            "Export Scenarios to CSV",
+            data=csv_bytes,
+            file_name="retirement_ai_scenarios.csv",
+            mime="text/csv",
+            use_container_width=True,
+            key="download_scenarios_csv",
+        )
 
 # Footer
 st.divider()
